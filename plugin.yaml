@@ -13,3 +13,7 @@ provides_tools:
   - create_wakeup_hook
   - list_wakeup_hooks
   - revoke_wakeup_hook
+  - schedule_wakeup
+  - sleep_until_event
+  - fire_event
+  - cancel_pending
