@@ -1,0 +1,15 @@
+name: subagent-signal
+version: 0.1.0
+description: "Live subagent progress checkpoints (child->parent, pull-based) plus a signed webhook that wakes a specific Hermes session from any external system."
+author: DadaDevelopment
+kind: standalone
+platforms:
+  - linux
+  - macos
+  - windows
+provides_tools:
+  - subagent_checkpoint
+  - read_subagent_checkpoints
+  - create_wakeup_hook
+  - list_wakeup_hooks
+  - revoke_wakeup_hook
