@@ -156,6 +156,7 @@ def _self_post_wake(*, session_id: str, text: str, host: str, port: int, api_key
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     store: WakeupHookStore = None  # type: ignore[assignment]
+    event_store: Any = None  # EventStore; None disables the event_type branch
     api_host: str = "127.0.0.1"
     api_port: int = 8642
     get_api_key: Any = None  # callable() -> str, resolved lazily (secret may rotate)
@@ -185,14 +186,33 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
         length = int(self.headers.get("Content-Length") or 0)
         body_raw = self.rfile.read(length) if length else b""
-        text = "[External event] A wakeup hook fired for this session."
+        default_text = "[External event] A wakeup hook fired for this session."
+        text = default_text
+        event_type = ""
+        event_payload = ""
         if body_raw:
             try:
                 parsed = json.loads(body_raw)
-                if isinstance(parsed, dict) and isinstance(parsed.get("text"), str) and parsed["text"].strip():
-                    text = f"[External event] {parsed['text'].strip()}"
+                if isinstance(parsed, dict):
+                    if isinstance(parsed.get("event_type"), str) and parsed["event_type"].strip():
+                        event_type = parsed["event_type"].strip()
+                        event_payload = str(parsed.get("payload") or "").strip()[:2000]
+                    elif isinstance(parsed.get("text"), str) and parsed["text"].strip():
+                        text = f"[External event] {parsed['text'].strip()}"
             except (ValueError, TypeError):
                 pass
+
+        # event_type branch: fire an event for ALL sleepers (needs the event store).
+        if event_type:
+            if self.event_store is None:
+                self._send(503, b'{"error":"event layer not available on this instance"}')
+                return
+            self.event_store.record_event(event_type, event_payload, source=f"webhook:{hook_id}")
+            threading.Thread(
+                target=self.event_store.scan_once, name="wakeup-hook-event-scan", daemon=True,
+            ).start()
+            self._send(202, json.dumps({"status": "accepted", "event_type": event_type}).encode())
+            return
 
         api_key = self.get_api_key() if callable(self.get_api_key) else ""
         if not api_key:
@@ -209,9 +229,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 class WakeupHookServer:
     """Owns the daemon ThreadingHTTPServer lifecycle. Idempotent start/stop."""
 
-    def __init__(self, store: WakeupHookStore, *, host: str = "127.0.0.1", port: int, api_host: str, api_port: int, get_api_key):
+    def __init__(self, store: WakeupHookStore, *, host: str = "127.0.0.1", port: int, api_host: str, api_port: int, get_api_key, event_store: Any = None):
         self.store, self.host, self.port = store, host, port
         self.api_host, self.api_port, self.get_api_key = api_host, api_port, get_api_key
+        self.event_store = event_store
         self._httpd: Optional[http.server.ThreadingHTTPServer] = None
 
     @property
@@ -224,6 +245,7 @@ class WakeupHookServer:
         handler = type("_BoundHandler", (_Handler,), {
             "store": self.store, "api_host": self.api_host, "api_port": self.api_port,
             "get_api_key": staticmethod(self.get_api_key),
+            "event_store": self.event_store,
         })
         try:
             httpd = http.server.ThreadingHTTPServer((self.host, self.port), handler)

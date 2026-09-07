@@ -1,21 +1,55 @@
 ---
 name: subagent-signal
-description: "Use when a subagent should report progress mid-run, or a session should wake on an external event (webhook/CI/monitoring) instead of polling."
-version: 0.1.0
+description: "Use when a subagent should report progress mid-run, a session should wake on an external event (webhook/CI/monitoring) or after a delay, or cross-session event signaling is needed."
+version: 0.2.0
 author: DadaDevelopment
 license: MIT
 metadata:
   hermes:
-    tags: [delegation, subagents, orchestration, webhooks, events]
+    tags: [delegation, subagents, orchestration, webhooks, events, scheduling]
 ---
 
 # Subagent Signal
 
-Two small tool sets that close real gaps found by auditing Hermes's
-existing orchestration primitives (`delegate_task`, `/goal`'s
-`wait_on_pid`/`wait_on_session`, the gateway's session-wake self-post) -
-this plugin does NOT reimplement any of that; it only adds what was
-missing on top.
+DURABLE EVENT PRIMITIVES (primary layer - /loop and /goal's wait barriers
+are sibling consumers of the same wake mechanism, not dependencies):
+
+- `schedule_wakeup(seconds, note?, session_id?)` - after the delay, the
+  target session receives a `[Scheduled wakeup]` turn. Durable: survives
+  restarts, fires even if this conversation already ended. The generic
+  time-based continuation primitive.
+- `sleep_until_event(event_type, timeout_seconds?, note?)` - park this
+  session until the named event fires. Zero inference while parked. ALWAYS
+  stop working after calling it - the event IS your next turn. Timeout
+  expiry also wakes you (`[Wait expired: ...]`), so a never-firing event
+  cannot strand a session.
+- `fire_event(event_type, payload?)` - wake every session parked on the
+  event. Cross-session signaling: a child waking its parent, one agent
+  handing work to another.
+- `cancel_pending(target)` - cancel a timer (tm_... id) or all waits on an
+  event_type.
+- `subagent.completed` event fires AUTOMATICALLY when any delegation batch
+  finishes (native subagent_stop hook) - so the classic pattern is:
+  delegate_task(...) then sleep_until_event("subagent.completed",
+  timeout_seconds=1800) and stop; the child's completion wakes you with
+  its status summary in the payload.
+
+External event types can be fired from outside Hermes via the signed
+`/wake/...` webhook (below) by POSTing `{"event_type": "...", "payload":
+"..."}` - the webhook body accepts EITHER `text` (wake one session) or
+`event_type` (fire an event for all sleepers).
+
+Two smaller tool sets (from v0.1, unchanged):
+- Child -> parent progress: `subagent_checkpoint` / `read_subagent_checkpoints`.
+- Signed external wakeup webhook: `create_wakeup_hook` / `list_wakeup_hooks` /
+  `revoke_wakeup_hook`.
+
+## Primitive layer vs /loop and /goal
+
+`/loop` is the interactive wrapper over the same scheduled-wakeup
+mechanism; goal wait barriers are the judge-facing wrapper over event
+parking. Reach for the primitives when you need them programmatically or
+across sessions; use /loop or /goal when a human is driving interactively.
 
 ## Part 1: child -> parent progress checkpoints
 

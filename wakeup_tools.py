@@ -213,6 +213,18 @@ def register_wakeup_tools(ctx) -> None:
 
 def start_wakeup_server(ctx) -> None:
     try:
-        _get_server(ctx)
+        cfg = _settings(ctx)
+        store = _get_store(ctx)
+        global _SERVER
+        if _SERVER is not None and _SERVER.running:
+            _SERVER.event_store = getattr(ctx, "events_store", None)
+            return
+        from .wakeup_hooks import WakeupHookServer
+
+        _SERVER = WakeupHookServer(
+            store, host="127.0.0.1", port=cfg["port"], api_host="127.0.0.1", api_port=cfg["api_port"],
+            get_api_key=_api_key, event_store=getattr(ctx, "events_store", None),
+        )
+        _SERVER.start()
     except Exception:
         logger.warning("subagent-signal: failed to start wakeup-hook server", exc_info=True)
