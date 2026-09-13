@@ -17,3 +17,5 @@ provides_tools:
   - sleep_until_event
   - fire_event
   - cancel_pending
+provides_hooks:
+  - subagent_stop
