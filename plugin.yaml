@@ -1,6 +1,6 @@
 name: subagent-signal
-version: 0.2.0
-description: "Live subagent progress checkpoints (child->parent, pull-based) plus a signed webhook that wakes a specific Hermes session from any external system."
+version: 0.3.0
+description: "Durable wake layer: stalled-/loop recovery watchdog, subagent checkpoints (child->parent), signed external wake webhooks, schedule_wakeup/sleep_until_event/fire_event."
 author: DadaDevelopment
 kind: standalone
 platforms:

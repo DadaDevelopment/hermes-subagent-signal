@@ -114,5 +114,23 @@ def register(ctx) -> None:
         except Exception:
             logger.warning("subagent-signal: failed to start event scheduler", exc_info=True)
         _register_subagent_stop_hook(ctx)
+        _start_loop_stall_watcher(ctx)
 
     start_wakeup_server(ctx)
+
+
+def _start_loop_stall_watcher(ctx) -> None:
+    """Watchdog for /loop ticks whose owner process died (route={} desktop loops
+    have no gateway-side driver; a SIGKILLed owner stalls the loop silently)."""
+    try:
+        margin = int(ctx.get_config("loop_stall_margin_seconds", 1200) or 1200)
+    except (TypeError, ValueError):
+        margin = 1200
+    try:
+        from .loop_stall import LoopStallWatcher
+
+        watcher = LoopStallWatcher(ctx.events_store, stall_margin_seconds=margin)
+        watcher.start_own_thread()
+        ctx.loop_stall_watcher = watcher
+    except Exception:
+        logger.warning("subagent-signal: loop-stall watchdog failed to start", exc_info=True)
