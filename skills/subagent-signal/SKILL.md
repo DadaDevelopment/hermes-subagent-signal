@@ -1,7 +1,7 @@
 ---
 name: subagent-signal
 description: "Use when a subagent should report progress mid-run, a session should wake on an external event (webhook/CI/monitoring) or after a delay, or cross-session event signaling is needed."
-version: 0.2.0
+version: 0.3.0
 author: DadaDevelopment
 license: MIT
 metadata:
@@ -38,6 +38,18 @@ External event types can be fired from outside Hermes via the signed
 `/wake/...` webhook (below) by POSTing `{"event_type": "...", "payload":
 "..."}` - the webhook body accepts EITHER `text` (wake one session) or
 `event_type` (fire an event for all sleepers).
+
+## Loop-stall watchdog (automatic, no tool)
+
+A desktop `/loop` has no gateway-side driver (its ticks come from the
+session-owner process's poller). If that process dies (gateway SIGKILL,
+container restart) the loop stays `active` with `next_due_at` in the past
+and nothing scans it - it stalls silently until the session reopens. The
+plugin's watchdog (every 60s, in the gateway process) detects ACTIVE loops
+overdue by more than `loop_stall_margin_seconds` (default 1200s) and
+self-posts a `[Loop recovery]` wake so the tick runs and the cadence
+resumes. If you receive a `[Loop recovery]` turn: continue the recurring
+task immediately; it is a real missed tick, not noise.
 
 Two smaller tool sets (from v0.1, unchanged):
 - Child -> parent progress: `subagent_checkpoint` / `read_subagent_checkpoints`.
