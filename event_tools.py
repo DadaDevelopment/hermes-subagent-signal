@@ -31,12 +31,21 @@ def _make_schedule_wakeup(ctx):
             return "Error: could not resolve a session_id (call from a session, or pass session_id)."
         note = str(args.get("note") or "").strip()
 
+        from .native_wake import needs_native_wake
+        from hermes_cli.loops import LoopManager
+        native = needs_native_wake(session_id)
+        if native and LoopManager(session_id).has_loop():
+            return ("Error: this session already runs a /loop, and a wakeup is delivered through the "
+                    "same native /loop slot (the api_server refuses to drive desktop/cli sessions). "
+                    "Let the running /loop tick, or stop it first with /loop stop.")
         store = ctx.events_store
         timer = store.add_timer(session_id, fire_at=time.time() + seconds, note=note)
         import time as _t
+        via = ("delivered as a one-shot native /loop tick" if native
+               else "delivered by api_server self-post")
         return (
             f"Wakeup scheduled: timer '{timer['timer_id']}' fires in {seconds}s "
-            f"(at {_t.strftime('%H:%M:%S', _t.localtime(timer['fire_at']))}).\n"
+            f"(at {_t.strftime('%H:%M:%S', _t.localtime(timer['fire_at']))}), {via}.\n"
             "This session will receive a [Scheduled wakeup] turn then. Persistent: "
             "survives restarts; cancel with cancel_pending."
         )

@@ -44,7 +44,17 @@ def _resolve_api_port(ctx) -> int:
 def _make_post_wake(ctx):
     def _post_wake(*, session_id: str, text: str) -> None:
         import threading
+        from .native_wake import arm_one_shot_loop, needs_native_wake
         from .wakeup_hooks import _self_post_wake
+
+        if session_id and needs_native_wake(session_id):
+            try:
+                armed, detail = arm_one_shot_loop(session_id, text)
+            except Exception as exc:
+                armed, detail = False, f"native /loop arm failed: {exc!r}"
+            log = logger.info if armed else logger.error
+            log("event wake for session %s: %s", session_id, detail)
+            return
 
         api_key = ""
         try:
